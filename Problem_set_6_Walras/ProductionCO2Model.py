@@ -72,7 +72,7 @@ class ProductionCO2ModelClass():
 
         w = 1.0 # normalization
 
-        income = w*l+par.T+sol.pi1+sol.pi2+0.1
+        income = w*l+par.T+sol.pi1+sol.pi2
 
         sol.c1 = par.alpha*income/p1
         sol.c2 = (1-par.alpha)*income/(p2+par.tau)
@@ -93,13 +93,12 @@ class ProductionCO2ModelClass():
             self.consumption(l[0],p1,p2)
             u_c = np.log(sol.c1**par.alpha*sol.c2**(1-par.alpha))
             u_l = par.nu*l[0]**(1+par.epsilon)/(1+par.epsilon)
-            U = np.nan # REPLACE CODE HERE
+            U = u_c - u_l
             return -U
 
         # b. find optimal labor supply
-
-        # ADD CODE HERE
-        # res = ??
+        res = optimize.minimize(value_of_choice,0.5,bounds=((1e-8,None),),
+                                method='L-BFGS-B',tol=par.tol_households)
         
         sol.l = res.x[0]
         sol.U = -res.fun
@@ -131,9 +130,7 @@ class ProductionCO2ModelClass():
         # d. households
         self.households(p1,p2)
 
-        error_1 = np.nan # REPLACE CODE HERE
-        error_2 = np.nan # REPLACE CODE HERE
-        return error_1,error_2
+        return (sol.y1-sol.c1),(sol.y2-sol.c2),(sol.l-sol.l1-sol.l2)
 
     def solve_grid_search(self,do_print=False,Np=10):
         """
@@ -182,15 +179,14 @@ class ProductionCO2ModelClass():
         # a. objective
         def obj(logp):
             p = np.exp(logp) # ensure positivity
-            errors = np.nan # REPLACE CODE HERE
+            errors = self.market_clearing(p)
             return errors[0],errors[1]
 
         # b. guess
         guess = np.log((sol.p1_approx,sol.p2_approx))
 
         # c. solve      
-        # ADD CODE HERE
-        # res = ?
+        res = optimize.root(obj,guess,method='hybr',tol=par.tol_p)
 
         sol.p1 = np.exp(res.x[0])
         sol.p2 = np.exp(res.x[1])
@@ -237,9 +233,9 @@ class ProductionCO2ModelClass():
             sol = self.sol
             
             par.tau = tau  
-            self.solve_grid_search(Np=5)          
+            self.solve_grid_search(Np=10)          
             check = self.solve(do_print=do_print_solve)
-            SWF = np.nan # REPLACE CODE HERE  
+            SWF = sol.U - par.kappa*sol.y2    
 
             if do_print or not check: 
                 print(f'{tau = :.3f}, {sol.U = :.4f}, {SWF = :.5f}')
@@ -256,14 +252,13 @@ class ProductionCO2ModelClass():
             SWFs[i] = -SWF(tau,do_print=i%5==0)
             Us[i] = sol.U
 
-        # c. optimal tau
+        # bc optimal tau
         i = np.argmax(SWFs)
-        tau_min = None # RPLACE CODE HERE 
-        tau_max = None # RPLACE CODE HERE 
+        tau_min = taus[i-1]
+        tau_max = taus[i+1]
 
-        # ADD CODE HERE
-        # res = ?
-
+        res = optimize.minimize_scalar(SWF,bounds=(tau_min,tau_max),method='bounded')
+        
         if not res.success:
             print(f'{res.message = }')
             assert res.success, 'Optimal tau not found!'
